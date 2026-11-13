@@ -1,4 +1,3 @@
-
 import { HydratedUser } from "../../model";
 import { JwtPayloadType } from "../service";
 

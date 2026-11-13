@@ -17,6 +17,7 @@ import { randomUUID } from "node:crypto";
 import { compare } from "../security";
 import { ILoginResponse } from "../../modules/authentication/entities/authentication.entities";
 import { toObjectId } from "../utils/objectid";
+
 type UserIdType = mongoose.Types.ObjectId | string;
 export type JwtPayloadType = JwtPayload & {
   sub: string | mongoose.Types.ObjectId;

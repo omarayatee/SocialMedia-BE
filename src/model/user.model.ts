@@ -1,6 +1,6 @@
 import mongoose, { HydratedDocument } from "mongoose";
-import { IUser } from "../common/interface";
 import { GenderEnum, ProviderEnum, RoleEnum } from "../common/enum";
+import { IUser } from "../common/interface";
 
 const userSchema = new mongoose.Schema<IUser>(
   {
@@ -26,7 +26,7 @@ const userSchema = new mongoose.Schema<IUser>(
     confirmEmail: { type: String },
     password: {
       type: String,
-      required: function (this: IUser): boolean {
+      required: function (): boolean {
         return this.provider == ProviderEnum.SYSTEM;
       },
     },
@@ -69,6 +69,17 @@ userSchema
   .get(function () {
     return `${this.firstName} ${this.lastName}`;
   });
+
+// userSchema.pre("validate", function () {
+//   console.log("PRE_VALIDATE");
+//   if (this.provider == ProviderEnum.GOOGLE && this.password) {
+//     throw new Error("Invalid google account");
+//   }
+// });
+// userSchema.post("validate", function (doc) {
+//   console.log("POST_VALIDATE");
+//   console.log(doc);
+// });
 
 export const UserModel = mongoose.model<IUser>("User", userSchema);
 export type HydratedUser = HydratedDocument<IUser>;
