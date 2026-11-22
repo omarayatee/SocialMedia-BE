@@ -1,6 +1,7 @@
 import mongoose, { HydratedDocument } from "mongoose";
-import { GenderEnum, ProviderEnum, RoleEnum } from "../common/enum";
+import { GenderEnum, ProviderEnum, RoleEnum, StatusEnum } from "../common/enum";
 import { IUser } from "../common/interface";
+import { encryptionSecurity, hash } from "../common/security";
 
 const userSchema = new mongoose.Schema<IUser>(
   {
@@ -45,11 +46,25 @@ const userSchema = new mongoose.Schema<IUser>(
       default: ProviderEnum.SYSTEM,
       enum: ProviderEnum,
     },
+    status: {
+      type: String,
+      default: StatusEnum.ACTIVE,
+      enum: StatusEnum,
+    },
+    isPrivate: {
+      type: Boolean,
+      default: false,
+    },
+    friends: {
+      type: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
+      default: [],
+    },
     phone: String,
     DOB: Date,
     image: String,
     coverImage: [String],
     changeCredentialsTime: Date,
+    changeStatusAt: Date,
   },
   {
     timestamps: true,
@@ -70,16 +85,48 @@ userSchema
     return `${this.firstName} ${this.lastName}`;
   });
 
-// userSchema.pre("validate", function () {
-//   console.log("PRE_VALIDATE");
-//   if (this.provider == ProviderEnum.GOOGLE && this.password) {
-//     throw new Error("Invalid google account");
-//   }
-// });
-// userSchema.post("validate", function (doc) {
-//   console.log("POST_VALIDATE");
-//   console.log(doc);
-// });
+userSchema.pre("save", async function () {
+  if (this.isModified("password")) {
+    this.password = await hash(this.password);
+  }
+  if (this.isModified("phone")) {
+    this.phone = await encryptionSecurity(this.phone as string);
+  }
+});
+
+userSchema.pre(["findOne", "find", "countDocuments"], function () {
+  const query = this.getFilter();
+  // console.log({ query });
+
+  if (query.paranoid != false) this.setQuery({ ...query, status: { $ne: StatusEnum.ARCHIVE } });
+});
+
+userSchema.pre(["updateOne", "updateMany", "findOneAndUpdate"], function () {
+  const query = this.getFilter();
+  // console.log({ query });
+
+  const update = this.getUpdate() as HydratedUser;
+  if (update.status == StatusEnum.ACTIVE) {
+    this.setQuery({ ...query, status: { $eq: StatusEnum.ARCHIVE } });
+  } else if (update.status == StatusEnum.ARCHIVE) {
+    this.setQuery({ ...query, status: { $eq: StatusEnum.ACTIVE } });
+  }
+  if (!update.status && query.paranoid != false) {
+    this.setQuery({ ...query, status: { $eq: StatusEnum.ACTIVE } });
+  }
+
+  this.setUpdate({
+    ...update,
+    ...(update.status ? { changeStatusAt: new Date() } : {}),
+  });
+});
+
+userSchema.pre(["deleteOne", "deleteMany", "findOneAndDelete"], function () {
+  const query = this.getFilter();
+  if (!query.force) {
+    this.setQuery({ ...query, status: { $eq: StatusEnum.ARCHIVE } });
+  }
+});
 
 export const UserModel = mongoose.model<IUser>("User", userSchema);
 export type HydratedUser = HydratedDocument<IUser>;

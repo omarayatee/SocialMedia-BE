@@ -1,4 +1,5 @@
 import z from "zod";
-import { updateProfileValidation } from "./../user.validation";
+import { searchValidation, updateProfileValidation } from "./../user.validation";
 
 export type UpdateProfileDto = z.infer<ReturnType<typeof updateProfileValidation>>["body"];
+export type SearchDto = z.infer<ReturnType<typeof searchValidation>>["query"];

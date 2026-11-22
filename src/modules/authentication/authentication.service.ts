@@ -1,25 +1,69 @@
-import { ConfirmEmailDto, LoginDto, ResendConfirmEmailDto, SignupDto } from "./dto/authentication.dto";
+import { ConfirmEmailDto, ForgotPasswordDto, LoginDto, ResendConfirmEmailDto, ResetPasswordDto, SignupDto } from "./dto/authentication.dto";
 import { IUser } from "../../common/interface";
 import { HydratedUser } from "../../model";
 import { BadRequestException, ConflictException, NotFoundException } from "../../common/exception";
 import { UserRepository } from "./../../common/repository/user.repository";
-import cacheServiceInstance, { CacheService } from "../../common/service/cache.service";
+import { cacheService, CacheService } from "../../common/service/cache.service";
 import { compare, encryptionSecurity, hash } from "../../common/security";
 import { EmailSubjectEnum, ProviderEnum } from "../../common/enum";
 import { emailEvent, UserEmailKey, UserEmailTrailsKey } from "../../common/utils/email";
 import { createOtp } from "./../../common/utils/otp";
 import { tokenService, TokenService } from "../../common/service";
 import { ILoginResponse } from "./entities/authentication.entities";
+import { OAuth2Client, TokenPayload } from "google-auth-library";
+import { WEB_CLIENT_IDS } from "../../config";
+import { notificationService, NotificationService } from "./../../common/service/notification.service";
 
 export class AuthenticationService {
+  private notificationService: NotificationService;
   private userRepository: UserRepository;
   private cacheService: CacheService;
   private tokenService: TokenService;
+  private clientService: OAuth2Client;
   constructor() {
     console.log("in");
     this.userRepository = new UserRepository();
-    this.cacheService = cacheServiceInstance;
+    this.cacheService = cacheService;
     this.tokenService = tokenService;
+    this.notificationService = notificationService;
+    this.clientService = new OAuth2Client();
+  }
+
+  async verifyGoogleAccount(idToken: string): Promise<TokenPayload> {
+    const ticket = await this.clientService.verifyIdToken({
+      idToken,
+      audience: WEB_CLIENT_IDS,
+    });
+
+    const payload = ticket.getPayload();
+    if (!payload?.email_verified) throw new BadRequestException("Fail to verify this google account");
+
+    return payload;
+  }
+
+  async signupWithGmail({ idToken }: { idToken: string }, issuer: string) {
+    const { email, picture, name } = await this.verifyGoogleAccount(idToken);
+
+    const existAccount = await this.userRepository.findOne({
+      filter: { email: email as string },
+    });
+    if (existAccount) {
+      if (existAccount.provider !== ProviderEnum.GOOGLE) {
+        throw new ConflictException("Invalid login provider");
+      }
+      return { status: 200, data: this.tokenService.createLoginCredentials({ user: existAccount, issuer }) };
+    }
+
+    const user = await this.userRepository.createOne({
+      data: {
+        email,
+        username: name,
+        image: picture,
+        confirmEmail: new Date(),
+        provider: ProviderEnum.GOOGLE,
+      },
+    });
+    return { status: 201, data: this.tokenService.createLoginCredentials({ user, issuer }) };
   }
 
   async sendEmailOtp({
@@ -57,6 +101,7 @@ export class AuthenticationService {
       data: { code },
     });
   }
+
   signupService = async ({ username, email, phone, gender, password }: SignupDto["body"]): Promise<IUser> => {
     // await this.cacheservice.set({ key: "name", value: "matara" });
 
@@ -69,12 +114,13 @@ export class AuthenticationService {
     }
 
     const account: HydratedUser = await this.userRepository.createOne({
-      data: { username, email, phone: await encryptionSecurity(phone), gender, password: await hash(password) },
+      data: { username, email, phone, gender, password },
       options: { validateBeforeSave: true },
     });
     await this.sendEmailOtp({ email, subject: EmailSubjectEnum.CONFIRM_EMAIL });
     return account.toJSON();
   };
+
   async confirmEmailService({ otp, email }: ConfirmEmailDto): Promise<void> {
     const account = await this.userRepository.findOne({
       filter: {
@@ -95,6 +141,7 @@ export class AuthenticationService {
     await this.cacheService.del({ key: await this.cacheService.keys({ prefix: UserEmailKey({ email, subject: EmailSubjectEnum.CONFIRM_EMAIL }) }) });
     return;
   }
+
   async resendConfirmEmail({ email }: ResendConfirmEmailDto): Promise<void> {
     const account = await this.userRepository.findOne({
       filter: {
@@ -109,7 +156,8 @@ export class AuthenticationService {
     await this.sendEmailOtp({ email, subject: EmailSubjectEnum.CONFIRM_EMAIL });
     return;
   }
-  async loginService({ email, password }: LoginDto, issuer: string): Promise<ILoginResponse> {
+
+  async loginService({ email, password, FCM }: LoginDto, issuer: string): Promise<ILoginResponse> {
     const account = await this.userRepository.findOne({
       filter: { email, provider: ProviderEnum.SYSTEM, confirmEmail: { $exists: true } },
     });
@@ -118,7 +166,47 @@ export class AuthenticationService {
 
     const match = await compare(password, account.password);
     if (!match) throw new NotFoundException("Invalid login data");
+
+    await this.notificationService.sendNotifications({
+      tokens: await this.notificationService.getFCMs({ userId: account._id }),
+      notification: { title: "LOGIN SESSION", body: "NEW LOGIN" },
+    });
+    if (FCM) {
+      await this.notificationService.addFCM({
+        userId: account._id,
+        FCM,
+      });
+    }
     return this.tokenService.createLoginCredentials({ user: account, issuer });
+  }
+
+  async forgotPasswordService({ email }: ForgotPasswordDto): Promise<void> {
+    const account = await this.userRepository.findOne({
+      filter: { email, provider: ProviderEnum.SYSTEM, confirmEmail: { $exists: true } },
+    });
+    if (!account) return;
+
+    await this.sendEmailOtp({ email, subject: EmailSubjectEnum.FORGOT_PASSWORD });
+  }
+
+  async resetPasswordService({ email, otp, password }: ResetPasswordDto): Promise<void> {
+    const account = await this.userRepository.findOne({
+      filter: { email, provider: ProviderEnum.SYSTEM, confirmEmail: { $exists: true } },
+    });
+    if (!account) throw new NotFoundException("Invalid reset data");
+
+    const hashOtp = await this.cacheService.get({
+      key: UserEmailKey({ email, subject: EmailSubjectEnum.FORGOT_PASSWORD }),
+    });
+    if (!hashOtp || !(await compare(otp, hashOtp))) {
+      throw new ConflictException("Invalid otp");
+    }
+
+    account.password = await hash(password);
+    account.changeCredentialsTime = new Date();
+    await account.save();
+
+    await this.cacheService.del({ key: await this.cacheService.keys({ prefix: UserEmailKey({ email, subject: EmailSubjectEnum.FORGOT_PASSWORD }) }) });
   }
 }
 

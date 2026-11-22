@@ -1,5 +1,5 @@
 import { HydratedUser } from "../../model";
-import { JwtPayloadType } from "../service";
+import { JwtPayloadType } from "../service/token.service";
 
 declare module "express-serve-static-core" {
   interface Request {
@@ -8,3 +8,4 @@ declare module "express-serve-static-core" {
     payload: JwtPayloadType;
   }
 }
+export type IFile = Express.Multer.File;

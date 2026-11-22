@@ -1,22 +1,29 @@
 import { ConflictException, NotFoundException } from "../../common/exception";
 import { UserRepository } from "../../common/repository";
-import { JwtPayloadType } from "../../common/service";
+import { cloudService, CloudService, JwtPayloadType } from "../../common/service";
 import { ACCESS_TOKEN_EXPIRES_IN } from "../../config";
 import { HydratedUser } from "../../model";
 import { tokenService, TokenService } from "./../../common/service/token.service";
-import cacheServiceInstance, { CacheService } from "../../common/service/cache.service";
+import { cacheService, CacheService } from "../../common/service/cache.service";
 import { decryptionSecurity, encryptionSecurity } from "../../common/security";
 import { toObjectId } from "../../common/utils";
+import { SearchDto, UpdateProfileDto } from "./dto/user.dto";
+import { IFile } from "../../common/types/express.types";
 import { logoutEnum } from "../../common/enum";
-import { UpdateProfileDto } from "./dto/user.dto";
+
+const escapeRegex = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 export class UserService {
   private readonly tokenService: TokenService;
   private readonly userRepository: UserRepository;
   private readonly cacheService: CacheService;
+  private readonly cloudService: CloudService;
+
   constructor() {
     this.tokenService = tokenService;
     this.userRepository = new UserRepository();
-    this.cacheService = cacheServiceInstance;
+    this.cacheService = cacheService;
+    this.cloudService = cloudService;
   }
 
   async rotateTokenService(payload: JwtPayloadType, user: HydratedUser, issuer: string) {
@@ -62,6 +69,7 @@ export class UserService {
       coverImage: user.coverImage,
       provider: user.provider,
       createdAt: user.createdAt,
+      isPrivate: user.isPrivate,
     };
   }
 
@@ -87,6 +95,40 @@ export class UserService {
       gender: user.gender,
       createdAt: user.createdAt?.toString(),
     };
+  }
+
+  async searchUsersService(user: HydratedUser, { q, page, limit }: SearchDto) {
+    const regex = new RegExp(`^${escapeRegex(q)}`, "i");
+
+    const filter = {
+      _id: { $ne: user._id },
+      confirmEmail: { $exists: true },
+      $or: [{ firstName: regex }, { lastName: regex }],
+    };
+
+    const count = await this.userRepository.countDocuments({ filter });
+
+    const users = await this.userRepository.find({
+      filter,
+      options: {
+        select: "firstName lastName image",
+        skip: (page - 1) * limit,
+        limit,
+      },
+    });
+    return { count, page, limit, users };
+  }
+
+  async privacyStatus(user: HydratedUser, { isPrivate }: { isPrivate: boolean }) {
+    user.isPrivate = isPrivate;
+    await user.save();
+    return { isPrivate };
+  }
+
+  async profileImage(file: IFile, user: HydratedUser) {
+    user.image = await this.cloudService.uploadAsset({ file, path: `User/${user._id.toString()}/profile` });
+    await user.save();
+    return user.toJSON();
   }
 }
 

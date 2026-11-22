@@ -15,6 +15,7 @@ export const Instagram: string = process.env.Instagram as string;
 export const WhatsApp: string = process.env.WhatsApp as string;
 export const Facebook: string = process.env.Facebook as string;
 export const ORIGIN: string = process.env.ORIGIN as string;
+export const WEB_CLIENT_IDS: string = process.env.WEB_CLIENT_IDS as string;
 
 export const ACCESS_USER_TOKEN_SIGNATURE: string = process.env
   .ACCESS_USER_TOKEN_SIGNATURE as string;

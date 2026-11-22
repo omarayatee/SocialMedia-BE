@@ -1,9 +1,12 @@
 import { NextFunction, Request, Response, Router } from "express";
-import { authentication, responseFormatter, validationMiddleware } from "../../middleware";
-import { TokenTypeEnum } from "../../common/enum";
+import { authentication, responseFormatter, uploadMiddleware, validationMiddleware } from "../../middleware";
+import { StorageEnum, TokenTypeEnum } from "../../common/enum";
+import { userService } from "./user.service";
 import { getIssuer } from "../../common/utils";
 import * as validators from "./user.validation";
-import { userService } from "./user.service";
+import { fileValidation, localFileUpload } from "../../common/utils/multer";
+import { IFile } from "../../common/types/express.types";
+import { IResponse, IUser } from "../../common/interface";
 
 const userController = Router({ caseSensitive: true, strict: true });
 
@@ -14,6 +17,7 @@ userController.get(
     return { data: req.user };
   }),
 );
+
 userController.post(
   "/rotate-token",
   authentication(TokenTypeEnum.REFRESH),
@@ -58,6 +62,40 @@ userController.get(
   validationMiddleware(validators.getProfileValidation),
   responseFormatter(async (req: Request, res: Response, next: NextFunction) => {
     const data = await userService.getUserProfile(req.validate.params.userId);
+    return { data };
+  }),
+);
+
+userController.get(
+  "/search",
+  authentication(TokenTypeEnum.ACCESS),
+  validationMiddleware(validators.searchValidation),
+  responseFormatter(async (req: Request, res: Response, next: NextFunction) => {
+    const data = await userService.searchUsersService(req.user, req.validate.query);
+    return { data };
+  }),
+);
+
+userController.patch(
+  "/profile-image",
+  authentication(TokenTypeEnum.ACCESS),
+  uploadMiddleware({
+    multerMiddleware: localFileUpload({}).single("attachment"),
+    validation: fileValidation.image,
+    customPath: "User",
+  }),
+  responseFormatter(async (req: Request, res: Response, next: NextFunction): Promise<IResponse<IUser>> => {
+    const account = await userService.profileImage(req.file as IFile, req.user);
+    return { res, data: account };
+  }),
+);
+
+userController.patch(
+  "/settings/privacy",
+  authentication(TokenTypeEnum.ACCESS),
+  validationMiddleware(validators.privacyValidation),
+  responseFormatter(async (req: Request, res: Response, next: NextFunction) => {
+    const data = await userService.privacyStatus(req.user, req.validate.body);
     return { data };
   }),
 );

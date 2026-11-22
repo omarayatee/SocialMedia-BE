@@ -14,10 +14,7 @@ export const validationMiddleware = (schema: validationSchemaType) => {
       params: req.params,
     });
     if (!validationResult.success) {
-      throw new BadRequestException(
-        "Validation Error",
-        validationResult.error.issues
-      );
+      throw new BadRequestException("Validation Error", validationResult.error.issues);
     }
     req.validate = validationResult.data;
     next();

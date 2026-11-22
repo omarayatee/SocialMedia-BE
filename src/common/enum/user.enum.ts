@@ -1,22 +1,11 @@
-// export enum GenderEnum{
-//   MALE,
-//   FEMALE
-// };
-// export enum RoleEnum{
-//   USER,
-//   ADMIN
-// };
-
-// export enum ProviderEnum{
-//   SYSTEM,
-//   GOOGLE
-// }
-
-
-
 export enum GenderEnum {
   MALE = "male",
   FEMALE = "female",
+}
+
+export enum RoleEnum {
+  USER = "user",
+  ADMIN = "admin",
 }
 
 export enum ProviderEnum {
@@ -24,7 +13,7 @@ export enum ProviderEnum {
   GOOGLE = "google",
 }
 
-export enum RoleEnum {
-  USER = "user",
-  ADMIN = "admin",
+export enum StatusEnum {
+  ARCHIVE = "archive",
+  ACTIVE = "active",
 }

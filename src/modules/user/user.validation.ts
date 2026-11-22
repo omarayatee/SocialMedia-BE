@@ -25,3 +25,21 @@ export const getProfileValidation = (lang: LanguageEnum) => {
     }),
   });
 };
+
+export const searchValidation = (lang: LanguageEnum) => {
+  return z.object({
+    query: z.strictObject({
+      q: z.string().trim().min(2).max(50),
+      page: z.coerce.number().int().min(1).default(1),
+      limit: z.coerce.number().int().min(1).max(50).default(10),
+    }),
+  });
+};
+
+export const privacyValidation = (lang: LanguageEnum) => {
+  return z.object({
+    body: z.strictObject({
+      isPrivate: z.boolean(),
+    }),
+  });
+};

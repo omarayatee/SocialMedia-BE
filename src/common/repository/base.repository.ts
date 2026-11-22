@@ -252,4 +252,8 @@ export abstract class DatabaseRepository<TRawDocType> {
   async findByIdAndDelete({ id }: { id: mongoose.Types.ObjectId }): Promise<HydratedDocument<TRawDocType> | null> {
     return await this.model.findOneAndDelete(id);
   }
+
+  async insertMany(data: AnyKeys<TRawDocType>) {
+    return await this.model.insertMany(data);
+  }
 }
